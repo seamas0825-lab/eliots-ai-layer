@@ -4,11 +4,13 @@
 
 <img src="Assets/EliotsAILayer-master.png" alt="Eliot's AI Layer 图标" width="160">
 
+[下载最新版本](https://github.com/seamas0825-lab/eliots-ai-layer/releases/latest) · [查看源码](https://github.com/seamas0825-lab/eliots-ai-layer)
+
 同时内置本地剪贴板历史：自动记录文本、链接、图片和文件位置，可通过自定义全局快捷键或单击菜单栏图标呼出，搜索后双击即可粘贴回原窗口。选中图片时会在右侧显示清晰预览，也可用系统原生 Quick Look 打开大图。历史上限可在 1–1000 条之间设置；图片保存在本机应用数据目录，文件仅保存原始路径，不会复制文件本体。带有 macOS 机密或临时标记的剪贴板内容不会记录。
 
 ## 使用
 
-1. 把 `Eliot's AI Layer.app` 移到“应用程序”文件夹并打开。
+1. 从 [Releases](https://github.com/seamas0825-lab/eliots-ai-layer/releases/latest) 下载 DMG，把 `Eliot's AI Layer.app` 移到“应用程序”文件夹并打开。
 2. 在首次弹出的设置中授予“辅助功能”权限。如果升级后仍显示未授权，请先在系统设置中移除旧条目，再重新添加 `/Applications/Eliot's AI Layer.app`。
 3. 填写 OpenAI Chat Completions 兼容的 API 地址、模型和 API Key。
 4. 在任意支持 macOS 辅助功能的应用中选中文字。
