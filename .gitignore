@@ -1,0 +1,16 @@
+.DS_Store
+.build/
+.swiftpm/
+dist/
+DerivedData/
+*.dmg
+*.zip
+
+# Local editor and environment files
+.idea/
+.vscode/
+*.xcuserstate
+xcuserdata/
+.env
+.env.*
+!.env.example
