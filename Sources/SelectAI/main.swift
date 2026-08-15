@@ -11,6 +11,16 @@ if CommandLine.arguments.contains("--preview-toolbar") {
     exit(0)
 }
 
+if CommandLine.arguments.contains("--preview-markdown") {
+    DistributedNotificationCenter.default().postNotificationName(
+        AppEvents.previewMarkdown,
+        object: nil,
+        userInfo: nil,
+        deliverImmediately: true
+    )
+    exit(0)
+}
+
 if CommandLine.arguments.contains("--show-settings") {
     DistributedNotificationCenter.default().postNotificationName(
         AppEvents.showSettings,
@@ -83,6 +93,11 @@ if CommandLine.arguments.contains("--self-test") {
             "https://example.com/openai/v1/chat/completions",
         "保留完整接口路径"
     )
+    expect(
+        AIClient.responsesURL(from: "https://api.openai.com/v1/chat/completions")?.absoluteString ==
+            "https://api.openai.com/v1/responses",
+        "生成 OpenAI Responses 联网接口"
+    )
     expect(AIClient.chatCompletionsURL(from: "file:///tmp/api") == nil, "拒绝非 HTTP 地址")
     expect(
         APIConfiguration(baseURL: "https://example.com/v1", model: "model", apiKey: "key", outputLanguage: "简体中文").isComplete,
@@ -101,12 +116,35 @@ if CommandLine.arguments.contains("--self-test") {
     expect(ClipboardShortcut.defaultValue.displayString == "⌥⌘V", "默认剪贴板快捷键")
     expect(
         SelectionMonitor.shouldUseClipboardFallback(didDrag: false, clickCount: 2),
-        "微信双击选词启用复制兜底"
+        "双击选词启用通用复制兜底"
+    )
+    expect(
+        SelectionMonitor.shouldUseClipboardFallback(didDrag: true, clickCount: 1),
+        "拖动选词启用通用复制兜底"
     )
     expect(
         SelectionMonitor.isWeChatBundleIdentifier("com.tencent.flue.WeChatAppEx"),
         "识别微信公众号文章子进程"
     )
+    expect(AIAction.explain.requiresWebResearch && AIAction.summarize.requiresWebResearch, "解释和总结请求联网核验")
+    expect(
+        AIClient.nativeWebSearchStrategy(baseURL: "https://api.openai.com/v1", model: "gpt-5") == .openAIResponses,
+        "OpenAI 使用 Responses 联网搜索"
+    )
+    expect(
+        AIClient.nativeWebSearchStrategy(
+            baseURL: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+            model: "qwen-plus"
+        ) == .chatEnableSearch,
+        "百炼使用 enable_search"
+    )
+    expect(
+        AIClient.nativeWebSearchStrategy(baseURL: "https://api.deepseek.com", model: "deepseek-v4-flash") == .unavailable,
+        "不伪造 DeepSeek API 联网能力"
+    )
+    let renderedMarkdown = MarkdownRenderer.render("## 结论\n\n**重点** 与 `代码`\n\n- 第一项\n- 第二项")
+    expect(!renderedMarkdown.string.contains("**") && !renderedMarkdown.string.contains("`"), "渲染 Markdown 行内语法")
+    expect(renderedMarkdown.string.contains("•\t第一项"), "渲染 Markdown 列表")
     let testPasteboard = NSPasteboard(name: NSPasteboard.Name("com.seamaslee.selectai.tests.\(UUID().uuidString)"))
     let testHistoryRoot = FileManager.default.temporaryDirectory
         .appendingPathComponent("SelectAI-ClipboardTests-\(UUID().uuidString)", isDirectory: true)

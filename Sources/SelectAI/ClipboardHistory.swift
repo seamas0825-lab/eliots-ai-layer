@@ -78,6 +78,7 @@ final class ClipboardHistoryManager {
     private let metadataURL: URL
     private var timer: Timer?
     private var lastChangeCount: Int
+    private var isCaptureSuspended = false
 
     private struct Candidate {
         let kind: ClipboardEntryKind
@@ -120,6 +121,15 @@ final class ClipboardHistoryManager {
     func stop() {
         timer?.invalidate()
         timer = nil
+    }
+
+    func suspendCapture() {
+        isCaptureSuspended = true
+    }
+
+    func resumeCaptureAfterInternalChange() {
+        lastChangeCount = pasteboard.changeCount
+        isCaptureSuspended = false
     }
 
     func updateLimit() {
@@ -188,6 +198,7 @@ final class ClipboardHistoryManager {
     }
 
     private func checkForChanges() {
+        guard !isCaptureSuspended else { return }
         guard AppSettings.clipboardHistoryEnabled else {
             lastChangeCount = pasteboard.changeCount
             return

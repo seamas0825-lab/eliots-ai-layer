@@ -3,6 +3,7 @@ import AVFoundation
 
 enum AppEvents {
     static let previewToolbar = Notification.Name("com.seamaslee.selectai.preview-toolbar")
+    static let previewMarkdown = Notification.Name("com.seamaslee.selectai.preview-markdown")
     static let showSettings = Notification.Name("com.seamaslee.selectai.show-settings")
     static let showClipboard = Notification.Name("com.seamaslee.selectai.show-clipboard")
 }
@@ -21,6 +22,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let statusMenu = NSMenu()
     private var permissionTimer: Timer?
     private var previewObserver: NSObjectProtocol?
+    private var markdownPreviewObserver: NSObjectProtocol?
     private var settingsObserver: NSObjectProtocol?
     private var clipboardObserver: NSObjectProtocol?
     private var applicationActivationObserver: NSObjectProtocol?
@@ -41,6 +43,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             queue: .main
         ) { [weak self] _ in
             self?.previewToolbar()
+        }
+        markdownPreviewObserver = DistributedNotificationCenter.default().addObserver(
+            forName: AppEvents.previewMarkdown,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.previewMarkdownResult()
         }
         settingsObserver = DistributedNotificationCenter.default().addObserver(
             forName: AppEvents.showSettings,
@@ -94,6 +103,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         clipboardManager.stop()
         permissionTimer?.invalidate()
         if let previewObserver { DistributedNotificationCenter.default().removeObserver(previewObserver) }
+        if let markdownPreviewObserver { DistributedNotificationCenter.default().removeObserver(markdownPreviewObserver) }
         if let settingsObserver { DistributedNotificationCenter.default().removeObserver(settingsObserver) }
         if let clipboardObserver { DistributedNotificationCenter.default().removeObserver(clipboardObserver) }
         if let applicationActivationObserver {
@@ -143,6 +153,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         monitor.onSelectionCleared = { [weak self] in
             guard let self, !self.toolbar.isInteracting else { return }
             self.toolbar.hide()
+        }
+        monitor.onClipboardFallbackStateChanged = { [weak self] isActive in
+            guard let self else { return }
+            if isActive {
+                self.clipboardManager.suspendCapture()
+            } else {
+                self.clipboardManager.resumeCaptureAfterInternalChange()
+            }
         }
         toolbar.onAction = { [weak self] action, text, point in
             self?.monitor.suppress(text: text)
@@ -249,7 +267,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             title: resultTitle,
             at: point,
             translationTarget: translationTarget,
-            allowsLanguageSwitch: isTranslation
+            allowsLanguageSwitch: isTranslation,
+            statusText: action.requiresWebResearch ? "正在核验信息并组织答案…" : "正在请求模型…"
         )
         Task { [weak self] in
             guard let self else { return }
@@ -262,9 +281,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 )
                 await MainActor.run {
                     guard self.activeRequestID == requestID else { return }
+                    let finalTitle: String
+                    switch result.webSearchState {
+                    case .enabled: finalTitle = "\(resultTitle) · 已联网"
+                    case .unavailable: finalTitle = "\(resultTitle) · 未联网"
+                    case .notRequested: finalTitle = resultTitle
+                    }
                     self.resultPanel.showResult(
-                        result,
-                        title: resultTitle,
+                        result.markdown,
+                        title: finalTitle,
                         translationTarget: translationTarget,
                         allowsLanguageSwitch: isTranslation
                     )
@@ -377,6 +402,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             point = NSEvent.mouseLocation
         }
         toolbar.show(text: "这是一段用于预览划词工具条的示例文字。", at: point)
+    }
+    private func previewMarkdownResult() {
+        let sample = """
+        ## 一句话说明
+
+        这是一段支持 **Markdown 排版** 的解释结果，不再显示原始星号。
+
+        ### 关键背景
+
+        - 清晰呈现重点和层级
+        - 支持 `行内代码`、引用与可点击链接
+        - 来源使用标准 Markdown 链接
+
+        > **最新核验**：涉及变化的信息会标注具体日期与联网状态。
+
+        | 能力 | 状态 |
+        | --- | --- |
+        | 标题与列表 | 已支持 |
+        | 链接与代码 | 已支持 |
+
+        ### 参考来源
+
+        1. [OpenAI Web Search](https://platform.openai.com/docs/guides/tools-web-search)
+        """
+        resultPanel.showResult(sample, title: "解释 · 已联网")
     }
     @objc private func quitApp() { NSApp.terminate(nil) }
 }

@@ -32,12 +32,12 @@ final class ResultPanelController: NSObject {
         title: String,
         at point: NSPoint,
         translationTarget: String? = nil,
-        allowsLanguageSwitch: Bool = false
+        allowsLanguageSwitch: Bool = false,
+        statusText: String = "正在请求模型…"
     ) {
         resultText = ""
         titleLabel.stringValue = title
-        textView.string = "正在请求模型…"
-        textView.textColor = .secondaryLabelColor
+        setPlainText(statusText, color: .secondaryLabelColor)
         spinner.startAnimation(nil)
         copyButton.isEnabled = false
         updateLanguagePopup(
@@ -58,8 +58,8 @@ final class ResultPanelController: NSObject {
         resultText = text
         titleLabel.stringValue = title
         spinner.stopAnimation(nil)
-        textView.textColor = .labelColor
-        textView.string = text
+        textView.textStorage?.setAttributedString(MarkdownRenderer.render(text))
+        scrollResultToTop()
         copyButton.isEnabled = true
         updateLanguagePopup(
             visible: allowsLanguageSwitch,
@@ -83,8 +83,7 @@ final class ResultPanelController: NSObject {
         resultText = ""
         titleLabel.stringValue = "请求失败"
         spinner.stopAnimation(nil)
-        textView.textColor = .systemRed
-        textView.string = message
+        setPlainText(message, color: .systemRed)
         copyButton.isEnabled = false
         updateLanguagePopup(
             visible: allowsLanguageSwitch,
@@ -157,6 +156,10 @@ final class ResultPanelController: NSObject {
         textView.font = .systemFont(ofSize: 14)
         textView.textContainerInset = NSSize(width: 14, height: 13)
         textView.isAutomaticLinkDetectionEnabled = true
+        textView.linkTextAttributes = [
+            .foregroundColor: NSColor.linkColor,
+            .underlineStyle: NSUnderlineStyle.single.rawValue
+        ]
 
         let scroll = NSScrollView()
         scroll.documentView = textView
@@ -272,6 +275,31 @@ final class ResultPanelController: NSObject {
             panel.animator().alphaValue = 1
             panel.animator().setFrame(finalFrame, display: true)
         }
+    }
+
+    private func setPlainText(_ text: String, color: NSColor) {
+        let style = NSMutableParagraphStyle()
+        style.lineHeightMultiple = 1.16
+        let value = NSAttributedString(
+            string: text,
+            attributes: [
+                .font: NSFont.systemFont(ofSize: 14),
+                .foregroundColor: color,
+                .paragraphStyle: style
+            ]
+        )
+        textView.textStorage?.setAttributedString(value)
+    }
+
+    private func scrollResultToTop() {
+        textView.setSelectedRange(NSRange(location: 0, length: 0))
+        let scroll = { [weak self] in
+            guard let self, let scrollView = self.textView.enclosingScrollView else { return }
+            scrollView.contentView.scroll(to: NSPoint(x: 0, y: 0))
+            scrollView.reflectScrolledClipView(scrollView.contentView)
+        }
+        scroll()
+        DispatchQueue.main.async(execute: scroll)
     }
 
     @objc private func copyResult() {

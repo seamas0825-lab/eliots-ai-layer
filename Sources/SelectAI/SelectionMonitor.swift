@@ -48,6 +48,7 @@ enum AccessibilityPermission {
 final class SelectionMonitor {
     var onSelection: ((CapturedSelection) -> Void)?
     var onSelectionCleared: (() -> Void)?
+    var onClipboardFallbackStateChanged: ((Bool) -> Void)?
 
     private var mouseMonitor: Any?
     private var keyboardMonitor: Any?
@@ -84,7 +85,7 @@ final class SelectionMonitor {
             self.scheduleCapture(
                 after: 0.20,
                 allowClipboardFallback: shouldTryClipboardFallback,
-                clearWeChatIfMissing: !shouldTryClipboardFallback
+                clearIfMissing: !shouldTryClipboardFallback
             )
         }
         keyboardMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.keyUp]) { [weak self] event in
@@ -101,7 +102,7 @@ final class SelectionMonitor {
         // both lightweight and considerably more reliable across browsers,
         // Electron apps and native text views.
         let timer = Timer(timeInterval: 0.24, repeats: true) { [weak self] _ in
-            self?.capture(allowClipboardFallback: false)
+            self?.capture(allowClipboardFallback: false, clearIfMissing: false)
         }
         pollingTimer = timer
         RunLoop.main.add(timer, forMode: .common)
@@ -127,20 +128,20 @@ final class SelectionMonitor {
     private func scheduleCapture(
         after delay: TimeInterval,
         allowClipboardFallback: Bool,
-        clearWeChatIfMissing: Bool = false
+        clearIfMissing: Bool = false
     ) {
         pendingWork?.cancel()
         let work = DispatchWorkItem { [weak self] in
             self?.capture(
                 allowClipboardFallback: allowClipboardFallback,
-                clearWeChatIfMissing: clearWeChatIfMissing
+                clearIfMissing: clearIfMissing
             )
         }
         pendingWork = work
         DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
     }
 
-    private func capture(allowClipboardFallback: Bool, clearWeChatIfMissing: Bool = false) {
+    private func capture(allowClipboardFallback: Bool, clearIfMissing: Bool = false) {
         guard AppSettings.isEnabled, AccessibilityPermission.isGranted else { return }
         guard !clipboardFallbackInProgress else { return }
 
@@ -149,18 +150,16 @@ final class SelectionMonitor {
             return
         }
 
-        if isWeChatFrontmost {
-            if allowClipboardFallback {
-                captureWeChatSelectionUsingClipboard()
-            } else if clearWeChatIfMissing {
-                clearSelection()
-            }
-            // WeChat does not publish AXSelectedText. Polling must not hide a
-            // toolbar that was just produced by the clipboard fallback.
+        if allowClipboardFallback {
+            captureSelectionUsingClipboard()
             return
         }
 
-        clearSelection()
+        // Polling is intentionally capture-only. Browsers and Electron apps can
+        // temporarily stop publishing AXSelectedText while the selection still
+        // exists; clearing here made the toolbar flash and disappear. A real
+        // unmodified click is the reliable signal that the selection was lost.
+        if clearIfMissing { clearSelection() }
     }
 
     private func emit(text: String, pid: pid_t, at point: NSPoint) {
@@ -195,14 +194,10 @@ final class SelectionMonitor {
             (bundleID.hasPrefix("com.tencent.") && bundleID.contains("wechat"))
     }
 
-    private var isWeChatFrontmost: Bool {
-        Self.isWeChatBundleIdentifier(NSWorkspace.shared.frontmostApplication?.bundleIdentifier)
-    }
-
-    private func captureWeChatSelectionUsingClipboard() {
+    private func captureSelectionUsingClipboard() {
         guard !clipboardFallbackInProgress,
               let application = NSWorkspace.shared.frontmostApplication,
-              Self.isWeChatBundleIdentifier(application.bundleIdentifier) else {
+              application.processIdentifier != ProcessInfo.processInfo.processIdentifier else {
             clearSelection()
             return
         }
@@ -214,9 +209,10 @@ final class SelectionMonitor {
         let pid = application.processIdentifier
 
         clipboardFallbackInProgress = true
+        onClipboardFallbackStateChanged?(true)
         ignoreKeyboardEventsUntil = Date().addingTimeInterval(0.80)
         postCommandCopy()
-        awaitWeChatClipboard(
+        awaitClipboardSelection(
             snapshot: snapshot,
             previousChangeCount: previousChangeCount,
             anchor: anchor,
@@ -225,7 +221,7 @@ final class SelectionMonitor {
         )
     }
 
-    private func awaitWeChatClipboard(
+    private func awaitClipboardSelection(
         snapshot: PasteboardSnapshot,
         previousChangeCount: Int,
         anchor: NSPoint,
@@ -241,7 +237,7 @@ final class SelectionMonitor {
                 // synthetic shortcut while finalizing the selection. Retry once
                 // midway through the wait window instead of failing immediately.
                 if attemptsRemaining == 3 { self.postCommandCopy() }
-                self.awaitWeChatClipboard(
+                self.awaitClipboardSelection(
                     snapshot: snapshot,
                     previousChangeCount: previousChangeCount,
                     anchor: anchor,
@@ -254,6 +250,7 @@ final class SelectionMonitor {
             let copied = didCopy ? pasteboard.string(forType: .string).map(self.normalized) : nil
             if didCopy { snapshot.restore(to: pasteboard) }
             self.clipboardFallbackInProgress = false
+            self.onClipboardFallbackStateChanged?(false)
             guard didCopy, let copied, copied.count >= 2 else {
                 self.clearSelection()
                 return
